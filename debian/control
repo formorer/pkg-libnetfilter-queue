@@ -1,0 +1,39 @@
+Source: libnetfilter-queue
+Section: libs
+Priority: optional
+Maintainer: netfilter maintainers <netfilter-maintainers@ned.snow-crash.org>
+Uploaders: Max Kellermann <max@duempel.org>, Alexander Wirt <formorer@debian.org>
+Build-Depends: debhelper (>= 5), libnfnetlink-dev (>= 0.0.16)
+Standards-Version: 3.7.2
+
+Package: libnetfilter-queue1
+Architecture: any
+Depends: ${shlibs:Depends}
+Description: Netfilter netlink-queue library
+ libnetfilter_queue is a userspace library providing an API to packets
+ that have been queued by the kernel packet filter. It is is part of a
+ system that deprecates the old ip_queue / libipq mechanism.
+
+Package: libnetfilter-queue1-dbg
+Section: libdevel
+Architecture: any
+Depends: ${shlibs:Depends}, libnetfilter-queue1 (= ${Source-Version})
+Description: Debugging symbols for libnetfilter-queue1
+ libnetfilter_queue is a userspace library providing an API to packets
+ that have been queued by the kernel packet filter. It is is part of a
+ system that deprecates the old ip_queue / libipq mechanism.
+ .
+ This package provides the debugging symbols.
+
+Package: libnetfilter-queue-dev
+Section: libdevel
+Architecture: any
+Depends: ${shlibs:Depends}, pkg-config,
+ libnetfilter-queue1 (= ${Source-Version}),
+ libnfnetlink-dev (>= 0.0.16)
+Description: Development files for libnetfilter-queue1
+ libnetfilter_queue is a userspace library providing an API to packets
+ that have been queued by the kernel packet filter. It is is part of a
+ system that deprecates the old ip_queue / libipq mechanism.
+ .
+ This package provides development files and static libraries.

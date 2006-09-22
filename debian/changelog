@@ -1,0 +1,5 @@
+libnetfilter-queue (0.0.12-1) unstable; urgency=low
+
+  * initial debian release (Closes: #388731)
+
+ -- Max Kellermann <max@duempel.org>  Fri, 22 Sep 2006 13:43:52 +0200
