@@ -1,9 +1,9 @@
 Source: libnetfilter-queue
 Section: libs
-Priority: optional
+Priority: extra
 Maintainer: netfilter maintainers <netfilter-maintainers@ned.snow-crash.org>
 Uploaders: Max Kellermann <max@duempel.org>, Alexander Wirt <formorer@debian.org>
-Build-Depends: debhelper (>= 5), libnfnetlink-dev (>= 0.0.16)
+Build-Depends: debhelper (>= 5), libnfnetlink-dev (>= 0.0.25)
 Standards-Version: 3.7.2
 
 Package: libnetfilter-queue1
@@ -30,7 +30,7 @@ Section: libdevel
 Architecture: any
 Depends: ${shlibs:Depends}, pkg-config,
  libnetfilter-queue1 (= ${Source-Version}),
- libnfnetlink-dev (>= 0.0.16)
+ libnfnetlink-dev (>= 0.0.25)
 Description: Development files for libnetfilter-queue1
  libnetfilter_queue is a userspace library providing an API to packets
  that have been queued by the kernel packet filter. It is is part of a

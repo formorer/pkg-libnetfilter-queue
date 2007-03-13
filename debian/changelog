@@ -1,3 +1,14 @@
+libnetfilter-queue (0.0.13-1) unstable; urgency=low
+
+  [ Max Kellermann ]
+  * new upstream release
+  * build-depend on libnfnetlink-dev 0.0.25
+
+  [ Alexander Wirt ]
+  * Change priority to extra 
+
+ -- Alexander Wirt <formorer@debian.org>  Tue, 13 Mar 2007 08:51:26 +0100
+
 libnetfilter-queue (0.0.12-1) unstable; urgency=low
 
   * initial debian release (Closes: #388731)
