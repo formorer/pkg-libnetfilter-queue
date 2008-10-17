@@ -1,3 +1,31 @@
+libnetfilter-queue (0.0.16-1) unstable; urgency=low
+
+  [ Max Kellermann ]
+  * new upstream release
+  * fixed duplicated word in description
+  * bumped Standards-Version to 3.8.0
+
+ -- Alexander Wirt <formorer@debian.org>  Fri, 17 Oct 2008 13:11:16 +0200
+
+libnetfilter-queue (0.0.15-1) unstable; urgency=low
+
+  [ Max Kellermann ]
+  * new upstream release
+    - shlibs version set to 0.0.15 because of API additions
+  * updated URL in watch file
+  * moved DH_COMPAT to debian/compat
+  * use ${binary:Version} instead of ${Source-Version}
+  * don't ignore "make distclean" errors
+  * bumped Standards-Version to 3.7.3
+  * added Homepage header to debian/control
+
+  [ Alexander Wirt ]
+  * package uploaded with bzip2 compression of tarball/diff to test
+    infrastructure as requested by ftpmaster. Do not upload such kind 
+    of packages on your own, until it got announced on d-d-a
+
+ -- Alexander Wirt <formorer@debian.org>  Fri, 04 Jan 2008 15:51:08 +0100
+
 libnetfilter-queue (0.0.13-1) unstable; urgency=low
 
   [ Max Kellermann ]
