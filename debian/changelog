@@ -1,3 +1,14 @@
+libnetfilter-queue (0.0.17-1) unstable; urgency=low
+
+  [ Max Kellermann ]
+  * new upstream release
+  * build with libnfnetlink-dev 0.0.41
+
+  [ Alexander Wirt ]
+  * bump standardsversion (no changes) 
+
+ -- Alexander Wirt <formorer@debian.org>  Thu, 02 Apr 2009 11:12:02 +0200
+
 libnetfilter-queue (0.0.16-1) unstable; urgency=low
 
   [ Max Kellermann ]
