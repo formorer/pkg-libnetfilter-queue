@@ -60,14 +60,22 @@ extern int nfq_set_verdict(struct nfq_q_handle *qh,
 			     u_int32_t id,
 			     u_int32_t verdict,
 			     u_int32_t data_len,
-			     unsigned char *buf);
+			     const unsigned char *buf);
 
-extern int nfq_set_verdict_mark(struct nfq_q_handle *qh, 
-				  u_int32_t id,
-			   	  u_int32_t verdict, 
-				  u_int32_t mark,
-			   	  u_int32_t datalen,
-				  unsigned char *buf);
+extern int nfq_set_verdict2(struct nfq_q_handle *qh,
+			    u_int32_t id,
+			    u_int32_t verdict, 
+			    u_int32_t mark,
+			    u_int32_t datalen,
+			    const unsigned char *buf);
+
+extern __attribute__((deprecated))
+int nfq_set_verdict_mark(struct nfq_q_handle *qh, 
+			 u_int32_t id,
+			 u_int32_t verdict, 
+			 u_int32_t mark,
+			 u_int32_t datalen,
+			 const unsigned char *buf);
 
 /* message parsing function */
 
@@ -96,7 +104,19 @@ extern int nfq_get_physoutdev_name(struct nlif_handle *nlif_handle,
 extern struct nfqnl_msg_packet_hw *nfq_get_packet_hw(struct nfq_data *nfad);
 
 /* return -1 if problem, length otherwise */
-extern int nfq_get_payload(struct nfq_data *nfad, char **data);
+extern int nfq_get_payload(struct nfq_data *nfad, unsigned char **data);
+
+enum {
+	NFQ_XML_HW	= (1 << 0),
+	NFQ_XML_MARK	= (1 << 1),
+	NFQ_XML_DEV	= (1 << 2),
+	NFQ_XML_PHYSDEV	= (1 << 3),
+	NFQ_XML_PAYLOAD	= (1 << 4),
+	NFQ_XML_TIME	= (1 << 5),
+	NFQ_XML_ALL	= ~0U,
+};
+
+extern int nfq_snprintf_xml(char *buf, size_t len, struct nfq_data *tb, int flags);
 
 #ifdef __cplusplus
 } /* extern "C" */

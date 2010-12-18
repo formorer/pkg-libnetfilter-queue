@@ -1,3 +1,13 @@
+libnetfilter-queue (1.0.0-1) experimental; urgency=low
+
+  * New upstream version (Closes: #588730)
+  * Bump standards version
+  * Fix maintainers email
+  * Move libnetfilter-queue1-dbg to section debug
+  * Add ${misc:Depends} to binary packages
+
+ -- Alexander Wirt <formorer@debian.org>  Sat, 18 Dec 2010 13:03:00 +0100
+
 libnetfilter-queue (0.0.17-1) unstable; urgency=low
 
   [ Max Kellermann ]

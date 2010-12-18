@@ -55,6 +55,10 @@
  * The current development version of libnetfilter_queue can be accessed
  * at https://git.netfilter.org/cgi-bin/gitweb.cgi?p=libnetfilter_queue.git;a=summary.
  *
+ * \section Privileges
+ * You need the CAP_NET_ADMIN capability in order to allow your application
+ * to receive from and to send packets to kernel-space.
+ *
  * \section Using libnetfilter_queue
  * 
  * To write your own program using libnetfilter_queue, you should start by reading
@@ -207,13 +211,22 @@ struct nfnl_handle *nfq_nfnlh(struct nfq_handle *h)
  * \verbatim
 	fd = nfq_fd(h);
 
-	while ((rv = recv(fd, buf, sizeof(buf), 0)) && rv >= 0) {
+	while ((rv = recv(fd, buf, sizeof(buf), 0)) >= 0) {
 		printf("pkt received\n");
 		nfq_handle_packet(h, buf, rv);
 	}
 \endverbatim
  * When the decision on a packet has been choosed, the verdict has to be given
- * by calling nfq_set_verdict() or nfq_set_verdict_mark().
+ * by calling nfq_set_verdict() or nfq_set_verdict2(). The verdict
+ * determines the destiny of the packet as follows:
+ *
+ *   - NF_DROP discarded the packet
+ *   - NF_ACCEPT the packet passes, continue iterations
+ *   - NF_STOLEN gone away
+ *   - NF_QUEUE inject the packet into a different queue
+ *     (the target queue number is in the high 16 bits of the verdict)
+ *   - NF_REPEAT iterate the same cycle once more
+ *   - NF_STOP accept, but don't continue iterations
  *
  * Data and information about the packet can be fetch by using message parsing
  * functions (See \link Parsing \endlink).
@@ -537,6 +550,8 @@ int nfq_handle_packet(struct nfq_handle *h, char *buf, int len)
  * - NFQNL_COPY_NONE - do not copy any data
  * - NFQNL_COPY_META - copy only packet metadata
  * - NFQNL_COPY_PACKET - copy entire packet
+ *
+ * \return -1 on error; >=0 otherwise.
  */
 int nfq_set_mode(struct nfq_q_handle *qh,
 		u_int8_t mode, u_int32_t range)
@@ -567,6 +582,8 @@ int nfq_set_mode(struct nfq_q_handle *qh,
  * Sets the size of the queue in kernel. This fixes the maximum number
  * of packets the kernel will store before internally before dropping
  * upcoming packets.
+ *
+ * \return -1 on error; >=0 otherwise.
  */
 int nfq_set_queue_maxlen(struct nfq_q_handle *qh,
 				u_int32_t queuelen)
@@ -593,7 +610,7 @@ int nfq_set_queue_maxlen(struct nfq_q_handle *qh,
 
 static int __set_verdict(struct nfq_q_handle *qh, u_int32_t id,
 		u_int32_t verdict, u_int32_t mark, int set_mark,
-		u_int32_t data_len, unsigned char *data)
+		u_int32_t data_len, const unsigned char *data)
 {
 	struct nfqnl_msg_verdict_hdr vh;
 	union {
@@ -629,8 +646,9 @@ static int __set_verdict(struct nfq_q_handle *qh, u_int32_t id,
 	nvecs = 1;
 
 	if (data_len) {
+		/* The typecast here is to cast away data's const-ness: */
 		nfnl_build_nfa_iovec(&iov[1], &data_attr, NFQA_PAYLOAD,
-				data_len, data);
+				data_len, (unsigned char *) data);
 		nvecs += 2;
 		/* Add the length of the appended data to the message
 		 * header.  The size of the attribute is given in the
@@ -665,17 +683,19 @@ static int __set_verdict(struct nfq_q_handle *qh, u_int32_t id,
  *
  * Notifies netfilter of the userspace verdict for the given packet.  Every
  * queued packet _must_ have a verdict specified by userspace, either by
- * calling this function, or by calling the nfq_set_verdict_mark() function.
+ * calling this function, or by calling the nfq_set_verdict2() function.
+ *
+ * \return -1 on error; >= 0 otherwise.
  */
 int nfq_set_verdict(struct nfq_q_handle *qh, u_int32_t id,
 		u_int32_t verdict, u_int32_t data_len, 
-		unsigned char *buf)
+		const unsigned char *buf)
 {
 	return __set_verdict(qh, id, verdict, 0, 0, data_len, buf);
 }	
 
 /**
- * nfq_set_verdict_mark - like nfq_set_verdict, but you can set the mark.
+ * nfq_set_verdict2 - like nfq_set_verdict, but you can set the mark.
  * \param qh Netfilter queue handle obtained by call to nfq_create_queue().
  * \param id	ID assigned to packet by netfilter.
  * \param verdict verdict to return to netfilter (NF_ACCEPT, NF_DROP)
@@ -683,9 +703,30 @@ int nfq_set_verdict(struct nfq_q_handle *qh, u_int32_t id,
  * \param data_len number of bytes of data pointed to by #buf
  * \param buf the buffer that contains the packet data
  */
+int nfq_set_verdict2(struct nfq_q_handle *qh, u_int32_t id,
+		     u_int32_t verdict, u_int32_t mark,
+		     u_int32_t data_len, const unsigned char *buf)
+{
+	return __set_verdict(qh, id, verdict, htonl(mark), 1, data_len, buf);
+}
+
+/**
+ * nfq_set_verdict_mark - like nfq_set_verdict, but you can set the mark.
+ * \param qh Netfilter queue handle obtained by call to nfq_create_queue().
+ * \param id	ID assigned to packet by netfilter.
+ * \param verdict verdict to return to netfilter (NF_ACCEPT, NF_DROP)
+ * \param mark the mark to put on the packet, in network byte order.
+ * \param data_len number of bytes of data pointed to by #buf
+ * \param buf the buffer that contains the packet data
+ *
+ * \return -1 on error; >= 0 otherwise.
+ *
+ * This function is deprecated since it is broken, its use is highly
+ * discouraged. Please, use nfq_set_verdict2 instead.
+ */
 int nfq_set_verdict_mark(struct nfq_q_handle *qh, u_int32_t id,
 		u_int32_t verdict, u_int32_t mark,
-		u_int32_t data_len, unsigned char *buf)
+		u_int32_t data_len, const unsigned char *buf)
 {
 	return __set_verdict(qh, id, verdict, mark, 1, data_len, buf);
 }
@@ -825,10 +866,9 @@ u_int32_t nfq_get_physoutdev(struct nfq_data *nfad)
  * was received through
  * \param nlif_handle pointer to a nlif interface resolving handle
  * \param nfad Netlink packet data handle passed to callback function
- * \param name pointer that will be set to the interface name string 
+ * \param name pointer to the buffer to receive the interface name;
+ *  not more than \c IFNAMSIZ bytes will be copied to it.
  * \return -1 in case of error, >0 if it succeed. 
- *
- * The #name variable will point to the name of the input interface.
  *
  * To use a nlif_handle, You need first to call nlif_open() and to open
  * an handler. Don't forget to store the result as it will be used 
@@ -871,10 +911,8 @@ int nfq_get_indev_name(struct nlif_handle *nlif_handle,
  * packet was received through
  * \param nlif_handle pointer to a nlif interface resolving handle
  * \param nfad Netlink packet data handle passed to callback function
- * \param name pointer that will be set to the interface name string 
- *
- * The #name variable will point to the name of the input physical
- * interface.
+ * \param name pointer to the buffer to receive the interface name;
+ *  not more than \c IFNAMSIZ bytes will be copied to it.
  *
  * See nfq_get_indev_name() documentation for nlif_handle usage.
  *
@@ -892,9 +930,8 @@ int nfq_get_physindev_name(struct nlif_handle *nlif_handle,
  * packet will be sent to
  * \param nlif_handle pointer to a nlif interface resolving handle
  * \param nfad Netlink packet data handle passed to callback function
- * \param name pointer that will be set to the interface name string 
- *
- * The #name variable will point to the name of the output interface.
+ * \param name pointer to the buffer to receive the interface name;
+ *  not more than \c IFNAMSIZ bytes will be copied to it.
  *
  * See nfq_get_indev_name() documentation for nlif_handle usage.
  *
@@ -912,9 +949,8 @@ int nfq_get_outdev_name(struct nlif_handle *nlif_handle,
  * packet will be sent to
  * \param nlif_handle pointer to a nlif interface resolving handle
  * \param nfad Netlink packet data handle passed to callback function
- * \param name pointer that will be set to the interface name string 
- * The #name variable will point to the name of the physical
- * output interface.
+ * \param name pointer to the buffer to receive the interface name;
+ *  not more than \c IFNAMSIZ bytes will be copied to it.
  *
  * See nfq_get_indev_name() documentation for nlif_handle usage.
  *
@@ -967,13 +1003,167 @@ struct nfqnl_msg_packet_hw *nfq_get_packet_hw(struct nfq_data *nfad)
  *
  * \return -1 on error, otherwise > 0.
  */
-int nfq_get_payload(struct nfq_data *nfad, char **data)
+int nfq_get_payload(struct nfq_data *nfad, unsigned char **data)
 {
 	*data = nfnl_get_pointer_to_data(nfad->data, NFQA_PAYLOAD, char);
 	if (*data)
 		return NFA_PAYLOAD(nfad->data[NFQA_PAYLOAD-1]);
 
 	return -1;
+}
+
+#define SNPRINTF_FAILURE(ret, rem, offset, len)			\
+do {								\
+	if (ret < 0)						\
+		return ret;					\
+	len += ret;						\
+	if (ret > rem)						\
+		ret = rem;					\
+	offset += ret;						\
+	rem -= ret;						\
+} while (0)
+
+int nfq_snprintf_xml(char *buf, size_t rem, struct nfq_data *tb, int flags)
+{
+	struct nfqnl_msg_packet_hdr *ph;
+	struct nfqnl_msg_packet_hw *hwph;
+	u_int32_t mark, ifi;
+	int size, offset = 0, len = 0, ret;
+	unsigned char *data;
+
+	size = snprintf(buf + offset, rem, "<pkt>");
+	SNPRINTF_FAILURE(size, rem, offset, len);
+
+	if (flags & NFQ_XML_TIME) {
+		time_t t;
+		struct tm tm;
+
+		t = time(NULL);
+		if (localtime_r(&t, &tm) == NULL)
+			return -1;
+
+		size = snprintf(buf + offset, rem, "<when>");
+		SNPRINTF_FAILURE(size, rem, offset, len);
+
+		size = snprintf(buf + offset, rem,
+				"<hour>%d</hour>", tm.tm_hour);
+		SNPRINTF_FAILURE(size, rem, offset, len);
+
+		size = snprintf(buf + offset,
+				rem, "<min>%02d</min>", tm.tm_min);
+		SNPRINTF_FAILURE(size, rem, offset, len);
+
+		size = snprintf(buf + offset,
+				rem, "<sec>%02d</sec>", tm.tm_sec);
+		SNPRINTF_FAILURE(size, rem, offset, len);
+
+		size = snprintf(buf + offset, rem, "<wday>%d</wday>",
+				tm.tm_wday + 1);
+		SNPRINTF_FAILURE(size, rem, offset, len);
+
+		size = snprintf(buf + offset, rem, "<day>%d</day>", tm.tm_mday);
+		SNPRINTF_FAILURE(size, rem, offset, len);
+
+		size = snprintf(buf + offset, rem, "<month>%d</month>",
+				tm.tm_mon + 1);
+		SNPRINTF_FAILURE(size, rem, offset, len);
+
+		size = snprintf(buf + offset, rem, "<year>%d</year>",
+				1900 + tm.tm_year);
+		SNPRINTF_FAILURE(size, rem, offset, len);
+
+		size = snprintf(buf + offset, rem, "</when>");
+		SNPRINTF_FAILURE(size, rem, offset, len);
+	}
+
+	ph = nfq_get_msg_packet_hdr(tb);
+	if (ph) {
+		size = snprintf(buf + offset, rem,
+				"<hook>%u</hook><id>%u</id>",
+				ph->hook, ntohl(ph->packet_id));
+		SNPRINTF_FAILURE(size, rem, offset, len);
+
+		hwph = nfq_get_packet_hw(tb);
+		if (hwph && (flags & NFQ_XML_HW)) {
+			int i, hlen = ntohs(hwph->hw_addrlen);
+
+			size = snprintf(buf + offset, rem, "<hw><proto>%04x"
+							   "</proto>",
+					ntohs(ph->hw_protocol));
+			SNPRINTF_FAILURE(size, rem, offset, len);
+
+			size = snprintf(buf + offset, rem, "<src>");
+			SNPRINTF_FAILURE(size, rem, offset, len);
+
+			for (i=0; i<hlen; i++) {
+				size = snprintf(buf + offset, rem, "%02x",
+						hwph->hw_addr[i]);
+				SNPRINTF_FAILURE(size, rem, offset, len);
+			}
+
+			size = snprintf(buf + offset, rem, "</src></hw>");
+			SNPRINTF_FAILURE(size, rem, offset, len);
+		} else if (flags & NFQ_XML_HW) {
+			size = snprintf(buf + offset, rem, "<hw><proto>%04x"
+						    "</proto></hw>",
+				 ntohs(ph->hw_protocol));
+			SNPRINTF_FAILURE(size, rem, offset, len);
+		}
+	}
+
+	mark = nfq_get_nfmark(tb);
+	if (mark && (flags & NFQ_XML_MARK)) {
+		size = snprintf(buf + offset, rem, "<mark>%u</mark>", mark);
+		SNPRINTF_FAILURE(size, rem, offset, len);
+	}
+
+	ifi = nfq_get_indev(tb);
+	if (ifi && (flags & NFQ_XML_DEV)) {
+		size = snprintf(buf + offset, rem, "<indev>%u</indev>", ifi);
+		SNPRINTF_FAILURE(size, rem, offset, len);
+	}
+
+	ifi = nfq_get_outdev(tb);
+	if (ifi && (flags & NFQ_XML_DEV)) {
+		size = snprintf(buf + offset, rem, "<outdev>%u</outdev>", ifi);
+		SNPRINTF_FAILURE(size, rem, offset, len);
+	}
+
+	ifi = nfq_get_physindev(tb);
+	if (ifi && (flags & NFQ_XML_PHYSDEV)) {
+		size = snprintf(buf + offset, rem,
+				"<physindev>%u</physindev>", ifi);
+		SNPRINTF_FAILURE(size, rem, offset, len);
+	}
+
+	ifi = nfq_get_physoutdev(tb);
+	if (ifi && (flags & NFQ_XML_PHYSDEV)) {
+		size = snprintf(buf + offset, rem,
+				"<physoutdev>%u</physoutdev>", ifi);
+		SNPRINTF_FAILURE(size, rem, offset, len);
+	}
+
+	ret = nfq_get_payload(tb, &data);
+	if (ret >= 0 && (flags & NFQ_XML_PAYLOAD)) {
+		int i;
+
+		size = snprintf(buf + offset, rem, "<payload>");
+		SNPRINTF_FAILURE(size, rem, offset, len);
+
+		for (i=0; i<ret; i++) {
+			size = snprintf(buf + offset, rem, "%02x",
+					data[i] & 0xff);
+			SNPRINTF_FAILURE(size, rem, offset, len);
+		}
+
+		size = snprintf(buf + offset, rem, "</payload>");
+		SNPRINTF_FAILURE(size, rem, offset, len);
+	}
+
+	size = snprintf(buf + offset, rem, "</pkt>");
+	SNPRINTF_FAILURE(size, rem, offset, len);
+
+	return len;
 }
 
 /**
