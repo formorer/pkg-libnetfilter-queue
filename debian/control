@@ -3,8 +3,8 @@ Section: libs
 Priority: extra
 Maintainer: Alexander Wirt <formorer@debian.org>
 Homepage: http://www.netfilter.org/projects/libnetfilter_queue/
-Build-Depends: debhelper (>= 5), libnfnetlink-dev (>= 0.0.41)
-Standards-Version: 3.9.1
+Build-Depends: debhelper (>= 5), libnfnetlink-dev (>= 0.0.41), libmnl-dev (>= 1.0.3)
+Standards-Version: 3.9.3
 
 Package: libnetfilter-queue1
 Architecture: any
