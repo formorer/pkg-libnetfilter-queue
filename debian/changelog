@@ -1,3 +1,16 @@
+libnetfilter-queue (1.0.2-1) unstable; urgency=low
+
+  * [24cb40d] Move to 3.0 for bz2 support
+  * [fe3b06a] Imported Upstream version 1.0.2
+    - Build again (Closes: #707414)
+  * [b9ff4dc] Build-depend on libmnl-dev and bump policy version
+  * [3d21917] Build depend on dh 9 for multiarch support
+  * [c94d171] Use dh-autoconf and bump policy version
+  * [a186d09] Use dh (9)
+  * [68d3449] We are now multi-arch enabled
+
+ -- Alexander Wirt <formorer@debian.org>  Thu, 06 Jun 2013 08:04:26 +0200
+
 libnetfilter-queue (1.0.0-1) experimental; urgency=low
 
   * New upstream version (Closes: #588730)
