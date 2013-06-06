@@ -1,10 +1,11 @@
 /* libnetfilter_queue.c: generic library for access to nf_queue
  *
  * (C) 2005 by Harald Welte <laforge@gnumonks.org>
+ * (C) 2005, 2008-2010 by Pablo Neira Ayuso <pablo@netfilter.org>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 
- *  as published by the Free Software Foundation
+ *  as published by the Free Software Foundation (or any later at your option)
  *
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -62,8 +63,30 @@
  * \section Using libnetfilter_queue
  * 
  * To write your own program using libnetfilter_queue, you should start by reading
- * the doxygen documentation (start by \link LibrarySetup \endlink page) and nfqnl_test.c source file.
- * 
+ * the doxygen documentation (start by \link LibrarySetup \endlink page) and
+ * nf-queue.c source file.
+ *
+ * \section errors ENOBUFS errors in recv()
+ *
+ * recv() may return -1 and errno is set to ENOBUFS in case that your
+ * application is not fast enough to retrieve the packets from the kernel.
+ * In that case, you can increase the socket buffer size by means of
+ * nfnl_rcvbufsiz(). Although this delays the appearance of ENOBUFS errors,
+ * you may hit it again sooner or later. The next section provides some hints
+ * on how to obtain the best performance for your application.
+ *
+ * \section perf Performance
+ * To improve your libnetfilter_queue application in terms of performance,
+ * you may consider the following tweaks:
+ *
+ * - increase the default socket buffer size by means of nfnl_rcvbufsiz().
+ * - set nice value of your process to -20 (maximum priority).
+ * - set the CPU affinity of your process to a spare core that is not used
+ * to handle NIC interruptions.
+ * - set NETLINK_NO_ENOBUFS socket option to avoid receiving ENOBUFS errors
+ * (requires Linux kernel >= 2.6.30).
+ * - see --queue-balance option in NFQUEUE target for multi-threaded apps
+ * (it requires Linux kernel >= 2.6.31).
  */
 
 struct nfq_handle
@@ -182,7 +205,7 @@ struct nfnl_handle *nfq_nfnlh(struct nfq_handle *h)
 
 /**
  *
- * \defgroup Queue Queue handling
+ * \defgroup Queue Queue handling [DEPRECATED]
  *
  * Once libnetfilter_queue library has been initialised (See 
  * \link LibrarySetup \endlink), it is possible to bind the program to a
@@ -222,11 +245,16 @@ struct nfnl_handle *nfq_nfnlh(struct nfq_handle *h)
  *
  *   - NF_DROP discarded the packet
  *   - NF_ACCEPT the packet passes, continue iterations
- *   - NF_STOLEN gone away
  *   - NF_QUEUE inject the packet into a different queue
  *     (the target queue number is in the high 16 bits of the verdict)
  *   - NF_REPEAT iterate the same cycle once more
  *   - NF_STOP accept, but don't continue iterations
+ *
+ * The verdict NF_STOLEN must not be used, as it has special meaning in the
+ * kernel.
+ * When using NF_REPEAT, one way to prevent re-queueing of the same packet
+ * is to also set an nfmark using nfq_set_verdict2, and set up the nefilter
+ * rules to only queue a packet when the mark is not (yet) set.
  *
  * Data and information about the packet can be fetch by using message parsing
  * functions (See \link Parsing \endlink).
@@ -255,7 +283,7 @@ int nfq_fd(struct nfq_handle *h)
  */
 
 /**
- * \defgroup LibrarySetup Library setup
+ * \defgroup LibrarySetup Library setup [DEPRECATED]
  *
  * Library initialisation is made in two steps.
  *
@@ -547,7 +575,7 @@ int nfq_handle_packet(struct nfq_handle *h, char *buf, int len)
  * Sets the amount of data to be copied to userspace for each packet queued
  * to the given queue.
  *
- * - NFQNL_COPY_NONE - do not copy any data
+ * - NFQNL_COPY_NONE - noop, do not use it
  * - NFQNL_COPY_META - copy only packet metadata
  * - NFQNL_COPY_PACKET - copy entire packet
  *
@@ -570,6 +598,48 @@ int nfq_set_mode(struct nfq_q_handle *qh,
 	params.copy_mode = mode;
 	nfnl_addattr_l(&u.nmh, sizeof(u), NFQA_CFG_PARAMS, &params,
 			sizeof(params));
+
+	return nfnl_query(qh->h->nfnlh, &u.nmh);
+}
+
+/**
+ * nfq_set_queue_flags - set flags (options) for the kernel queue
+ * \param qh Netfilter queue handle obtained by call to nfq_create_queue().
+ * \param mask specifies which flag bits to modify
+ * \param flag bitmask of flags
+ *
+ * Here's a little code snippet to show how to use this API:
+ * \verbatim
+	uint32_t flags = NFQA_CFG_F_FAIL_OPEN;
+	uint32_t mask = NFQA_CFG_F_FAIL_OPEN;
+
+	printf("Enabling fail-open on this q\n");
+	err = nfq_set_queue_flags(qh, mask, flags);
+
+	printf("Disabling fail-open on this q\n");
+	flags &= ~NFQA_CFG_F_FAIL_OPEN;
+	err = nfq_set_queue_flags(qh, mask, flags);
+\endverbatim
+ * \return -1 on error with errno set appropriately; =0 otherwise.
+ */
+int nfq_set_queue_flags(struct nfq_q_handle *qh,
+			uint32_t mask, uint32_t flags)
+{
+	union {
+		char buf[NFNL_HEADER_LEN
+			+NFA_LENGTH(sizeof(mask)
+			+NFA_LENGTH(sizeof(flags)))];
+		struct nlmsghdr nmh;
+	} u;
+
+	mask = htonl(mask);
+	flags = htonl(flags);
+
+	nfnl_fill_hdr(qh->h->nfnlssh, &u.nmh, 0, AF_UNSPEC, qh->id,
+		      NFQNL_MSG_CONFIG, NLM_F_REQUEST|NLM_F_ACK);
+
+	nfnl_addattr32(&u.nmh, sizeof(u), NFQA_CFG_FLAGS, flags);
+	nfnl_addattr32(&u.nmh, sizeof(u), NFQA_CFG_MASK, mask);
 
 	return nfnl_query(qh->h->nfnlh, &u.nmh);
 }
@@ -610,7 +680,8 @@ int nfq_set_queue_maxlen(struct nfq_q_handle *qh,
 
 static int __set_verdict(struct nfq_q_handle *qh, u_int32_t id,
 		u_int32_t verdict, u_int32_t mark, int set_mark,
-		u_int32_t data_len, const unsigned char *data)
+		u_int32_t data_len, const unsigned char *data,
+		enum nfqnl_msg_types type)
 {
 	struct nfqnl_msg_verdict_hdr vh;
 	union {
@@ -633,7 +704,7 @@ static int __set_verdict(struct nfq_q_handle *qh, u_int32_t id,
 	vh.id = htonl(id);
 
 	nfnl_fill_hdr(qh->h->nfnlssh, &u.nmh, 0, AF_UNSPEC, qh->id,
-			NFQNL_MSG_VERDICT, NLM_F_REQUEST);
+				type, NLM_F_REQUEST);
 
 	/* add verdict header */
 	nfnl_addattr_l(&u.nmh, sizeof(u), NFQA_VERDICT_HDR, &vh, sizeof(vh));
@@ -683,7 +754,8 @@ static int __set_verdict(struct nfq_q_handle *qh, u_int32_t id,
  *
  * Notifies netfilter of the userspace verdict for the given packet.  Every
  * queued packet _must_ have a verdict specified by userspace, either by
- * calling this function, or by calling the nfq_set_verdict2() function.
+ * calling this function, the nfq_set_verdict2() function, or the _batch
+ * versions of these functions.
  *
  * \return -1 on error; >= 0 otherwise.
  */
@@ -691,7 +763,8 @@ int nfq_set_verdict(struct nfq_q_handle *qh, u_int32_t id,
 		u_int32_t verdict, u_int32_t data_len, 
 		const unsigned char *buf)
 {
-	return __set_verdict(qh, id, verdict, 0, 0, data_len, buf);
+	return __set_verdict(qh, id, verdict, 0, 0, data_len, buf,
+						NFQNL_MSG_VERDICT);
 }	
 
 /**
@@ -707,7 +780,41 @@ int nfq_set_verdict2(struct nfq_q_handle *qh, u_int32_t id,
 		     u_int32_t verdict, u_int32_t mark,
 		     u_int32_t data_len, const unsigned char *buf)
 {
-	return __set_verdict(qh, id, verdict, htonl(mark), 1, data_len, buf);
+	return __set_verdict(qh, id, verdict, htonl(mark), 1, data_len,
+						buf, NFQNL_MSG_VERDICT);
+}
+
+/**
+ * nfq_set_verdict_batch - issue verdicts on several packets at once
+ * \param qh Netfilter queue handle obtained by call to nfq_create_queue().
+ * \param id maximum ID of the packets that the verdict should be applied to.
+ * \param verdict verdict to return to netfilter (NF_ACCEPT, NF_DROP)
+ *
+ * Unlike nfq_set_verdict, the verdict is applied to all queued packets
+ * whose packet id is smaller or equal to #id.
+ *
+ * batch support was added in Linux 3.1.
+ * These functions will fail silently on older kernels.
+ */
+int nfq_set_verdict_batch(struct nfq_q_handle *qh, u_int32_t id,
+					  u_int32_t verdict)
+{
+	return __set_verdict(qh, id, verdict, 0, 0, 0, NULL,
+					NFQNL_MSG_VERDICT_BATCH);
+}
+
+/**
+ * nfq_set_verdict_batch2 - like nfq_set_verdict_batch, but you can set a mark.
+ * \param qh Netfilter queue handle obtained by call to nfq_create_queue().
+ * \param id maximum ID of the packets that the verdict should be applied to.
+ * \param verdict verdict to return to netfilter (NF_ACCEPT, NF_DROP)
+ * \param mark mark to put on packet
+ */
+int nfq_set_verdict_batch2(struct nfq_q_handle *qh, u_int32_t id,
+		     u_int32_t verdict, u_int32_t mark)
+{
+	return __set_verdict(qh, id, verdict, htonl(mark), 1, 0,
+				NULL, NFQNL_MSG_VERDICT_BATCH);
 }
 
 /**
@@ -728,7 +835,8 @@ int nfq_set_verdict_mark(struct nfq_q_handle *qh, u_int32_t id,
 		u_int32_t verdict, u_int32_t mark,
 		u_int32_t data_len, const unsigned char *buf)
 {
-	return __set_verdict(qh, id, verdict, mark, 1, data_len, buf);
+	return __set_verdict(qh, id, verdict, mark, 1, data_len, buf,
+						NFQNL_MSG_VERDICT);
 }
 
 /**
@@ -742,7 +850,7 @@ int nfq_set_verdict_mark(struct nfq_q_handle *qh, u_int32_t id,
  *************************************************************/
 
 /**
- * \defgroup Parsing Message parsing functions
+ * \defgroup Parsing Message parsing functions [DEPRECATED]
  * @{
  */
 
@@ -753,7 +861,7 @@ int nfq_set_verdict_mark(struct nfq_q_handle *qh, u_int32_t id,
  * \return the netfilter queue netlink packet header for the given
  * nfq_data argument.  Typically, the nfq_data value is passed as the 3rd
  * parameter to the callback function set by a call to nfq_create_queue().
- *
+  *
  * The nfqnl_msg_packet_hdr structure is defined in libnetfilter_queue.h as:
  *
  * \verbatim
@@ -1005,12 +1113,17 @@ struct nfqnl_msg_packet_hw *nfq_get_packet_hw(struct nfq_data *nfad)
  */
 int nfq_get_payload(struct nfq_data *nfad, unsigned char **data)
 {
-	*data = nfnl_get_pointer_to_data(nfad->data, NFQA_PAYLOAD, char);
+	*data = (unsigned char *)
+		nfnl_get_pointer_to_data(nfad->data, NFQA_PAYLOAD, char);
 	if (*data)
 		return NFA_PAYLOAD(nfad->data[NFQA_PAYLOAD-1]);
 
 	return -1;
 }
+
+/**
+ * @}
+ */
 
 #define SNPRINTF_FAILURE(ret, rem, offset, len)			\
 do {								\
@@ -1023,6 +1136,34 @@ do {								\
 	rem -= ret;						\
 } while (0)
 
+/**
+ * \defgroup Printing Printing [DEPRECATED]
+ * @{
+ */
+
+/**
+ * nfq_snprintf_xml - print the enqueued packet in XML format into a buffer
+ * \param buf The buffer that you want to use to print the logged packet
+ * \param rem The size of the buffer that you have passed
+ * \param tb Netlink packet data handle passed to callback function
+ * \param flags The flag that tell what to print into the buffer
+ *
+ * This function supports the following flags:
+ *
+ *	- NFQ_XML_HW: include the hardware link layer address
+ *	- NFQ_XML_MARK: include the packet mark
+ *	- NFQ_XML_DEV: include the device information
+ *	- NFQ_XML_PHYSDEV: include the physical device information
+ *	- NFQ_XML_PAYLOAD: include the payload (in hexadecimal)
+ *	- NFQ_XML_TIME: include the timestamp
+ *	- NFQ_XML_ALL: include all the logging information (all flags set)
+ *
+ * You can combine this flags with an binary OR.
+ *
+ * \return -1 in case of failure, otherwise the length of the string that
+ * would have been printed into the buffer (in case that there is enough
+ * room in it). See snprintf() return value for more information.
+ */
 int nfq_snprintf_xml(char *buf, size_t rem, struct nfq_data *tb, int flags)
 {
 	struct nfqnl_msg_packet_hdr *ph;
