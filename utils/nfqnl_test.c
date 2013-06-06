@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <netinet/in.h>
+#include <linux/types.h>
 #include <linux/netfilter.h>		/* for NF_ACCEPT */
 
 #include <libnetfilter_queue/libnetfilter_queue.h>
@@ -60,7 +61,7 @@ int main(int argc, char **argv)
 	struct nfnl_handle *nh;
 	int fd;
 	int rv;
-	char buf[4096];
+	char buf[4096] __attribute__ ((aligned));
 
 	printf("opening library handle\n");
 	h = nfq_open();
